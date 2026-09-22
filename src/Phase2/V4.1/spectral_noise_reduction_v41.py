@@ -14,6 +14,7 @@ class SpectralNoiseReducer:
         minimum_gain=0.55,
         smoothing=0.85,
     ):
+
         self.sample_rate = sample_rate
         self.frame_size = frame_size
         self.hop_size = hop_size
@@ -35,12 +36,29 @@ class SpectralNoiseReducer:
 
         self.noise_power = None
 
+    # =========================================================
+    # RESET STATE
+    # =========================================================
+
+    def reset(self):
+
+        self.previous_gain = np.ones(
+            self.frame_size // 2 + 1,
+            dtype=np.float32
+        )
+
+        self.noise_power = None
+
+    # =========================================================
+    # NOISE ESTIMATION
+    # =========================================================
+
     def estimate_noise(self, audio):
 
         audio = np.asarray(
             audio,
             dtype=np.float32
-        )
+        ).reshape(-1)
 
         search_samples = min(
             len(audio),
@@ -55,21 +73,47 @@ class SpectralNoiseReducer:
         ]
 
         if len(search_audio) < self.frame_size:
-            raise ValueError(
-                "Audio is too short for noise estimation."
+
+            # For short audio, use the available
+            # audio after zero padding.
+
+            padded = np.pad(
+                search_audio,
+                (
+                    0,
+                    self.frame_size -
+                    len(search_audio)
+                )
             )
+
+            spectrum = np.fft.rfft(
+                padded * self.window
+            )
+
+            noise_power = (
+                np.abs(spectrum) ** 2
+            )
+
+            self.noise_power = np.maximum(
+                noise_power,
+                1e-10
+            )
+
+            return self.noise_power
 
         frames = []
         energies = []
 
         for start in range(
             0,
-            len(search_audio) - self.frame_size + 1,
+            len(search_audio) -
+            self.frame_size + 1,
             self.hop_size
         ):
 
             frame = search_audio[
-                start:start + self.frame_size
+                start:
+                start + self.frame_size
             ]
 
             energy = np.mean(
@@ -84,23 +128,61 @@ class SpectralNoiseReducer:
                 frame * self.window
             )
 
-            power = np.abs(
-                spectrum
-            ) ** 2
+            power = (
+                np.abs(spectrum) ** 2
+            )
 
-            frames.append(power)
+            frames.append(
+                power
+            )
 
         energies = np.asarray(
-            energies
+            energies,
+            dtype=np.float32
         )
 
         frames = np.asarray(
-            frames
+            frames,
+            dtype=np.float32
         )
 
-        # Select the quietest 25% of frames.
-        # These are more likely to contain
-        # background noise than speech.
+        if len(frames) == 0:
+
+            padded = np.pad(
+                search_audio,
+                (
+                    0,
+                    max(
+                        0,
+                        self.frame_size -
+                        len(search_audio)
+                    )
+                )
+            )
+
+            padded = padded[
+                :self.frame_size
+            ]
+
+            spectrum = np.fft.rfft(
+                padded * self.window
+            )
+
+            noise_power = (
+                np.abs(spectrum) ** 2
+            )
+
+            self.noise_power = np.maximum(
+                noise_power,
+                1e-10
+            )
+
+            return self.noise_power
+
+        # -----------------------------------------------------
+        # Quietest 25% of frames
+        # -----------------------------------------------------
+
         threshold = np.percentile(
             energies,
             25
@@ -111,6 +193,7 @@ class SpectralNoiseReducer:
         ]
 
         if len(quiet_frames) == 0:
+
             quiet_frames = frames
 
         noise_power = np.median(
@@ -125,12 +208,17 @@ class SpectralNoiseReducer:
 
         return self.noise_power
 
+    # =========================================================
+    # SPEECH DETECTION
+    # =========================================================
+
     def detect_speech(
         self,
         magnitude
     ):
 
         if self.noise_power is None:
+
             return True
 
         signal_power = (
@@ -138,14 +226,16 @@ class SpectralNoiseReducer:
         )
 
         average_snr = np.mean(
-            signal_power
-            /
-            self.noise_power
+            signal_power /
+            (
+                self.noise_power +
+                1e-10
+            )
         )
 
         average_snr_db = (
-            10
-            * np.log10(
+            10 *
+            np.log10(
                 max(
                     average_snr,
                     1e-10
@@ -155,6 +245,10 @@ class SpectralNoiseReducer:
 
         return average_snr_db > 4.0
 
+    # =========================================================
+    # PROCESS AUDIO
+    # =========================================================
+
     def process(self, audio):
 
         audio = np.asarray(
@@ -162,37 +256,53 @@ class SpectralNoiseReducer:
             dtype=np.float32
         ).reshape(-1)
 
+        if len(audio) == 0:
+
+            return audio
+
         original_length = len(audio)
+
+        # -----------------------------------------------------
+        # Estimate initial noise
+        # -----------------------------------------------------
 
         self.estimate_noise(
             audio
         )
 
+        # -----------------------------------------------------
+        # Padding
+        # -----------------------------------------------------
+
         if original_length < self.frame_size:
 
             pad_amount = (
-                self.frame_size
-                - original_length
+                self.frame_size -
+                original_length
             )
 
         else:
 
             remainder = (
                 (
-                    original_length
-                    - self.frame_size
+                    original_length -
+                    self.frame_size
                 )
-                % self.hop_size
+                %
+                self.hop_size
             )
 
             pad_amount = (
-                self.hop_size
-                - remainder
+                self.hop_size -
+                remainder
             ) % self.hop_size
 
         padded = np.pad(
             audio,
-            (0, pad_amount)
+            (
+                0,
+                pad_amount
+            )
         )
 
         enhanced = np.zeros_like(
@@ -205,18 +315,25 @@ class SpectralNoiseReducer:
             dtype=np.float32
         )
 
+        # =====================================================
+        # FRAME PROCESSING
+        # =====================================================
+
         for start in range(
             0,
-            len(padded) - self.frame_size + 1,
+            len(padded) -
+            self.frame_size + 1,
             self.hop_size
         ):
 
             frame = padded[
-                start:start + self.frame_size
+                start:
+                start + self.frame_size
             ]
 
             windowed = (
-                frame * self.window
+                frame *
+                self.window
             )
 
             spectrum = np.fft.rfft(
@@ -235,22 +352,31 @@ class SpectralNoiseReducer:
                 magnitude ** 2
             )
 
-            is_speech = (
-                self.detect_speech(
-                    magnitude
-                )
+            # -------------------------------------------------
+            # Speech detection
+            # -------------------------------------------------
+
+            is_speech = self.detect_speech(
+                magnitude
             )
 
-            # Adapt the noise model only when
-            # the current frame is not speech.
+            # -------------------------------------------------
+            # Adaptive noise update
+            # -------------------------------------------------
+
             if not is_speech:
 
                 self.noise_power = (
-                    (1.0 - self.noise_update_rate)
-                    * self.noise_power
+                    (
+                        1.0 -
+                        self.noise_update_rate
+                    )
+                    *
+                    self.noise_power
                     +
                     self.noise_update_rate
-                    * signal_power
+                    *
+                    signal_power
                 )
 
                 self.noise_power = np.maximum(
@@ -258,11 +384,16 @@ class SpectralNoiseReducer:
                     1e-10
                 )
 
-            # Estimate SNR.
+            # -------------------------------------------------
+            # SNR estimation
+            # -------------------------------------------------
+
             snr = (
-                signal_power
-                /
-                self.noise_power
+                signal_power /
+                (
+                    self.noise_power +
+                    1e-10
+                )
             )
 
             snr = np.maximum(
@@ -270,37 +401,56 @@ class SpectralNoiseReducer:
                 0.0
             )
 
-            # Wiener gain.
+            # -------------------------------------------------
+            # Wiener gain
+            # -------------------------------------------------
+
             wiener_gain = (
-                snr
-                /
-                (snr + 1.0)
+                snr /
+                (
+                    snr + 1.0
+                )
             )
 
-            # Speech protection.
+            # -------------------------------------------------
+            # Speech protection
+            # -------------------------------------------------
+
             gain = (
                 self.minimum_gain
                 +
-                (1.0 - self.minimum_gain)
-                * wiener_gain
+                (
+                    1.0 -
+                    self.minimum_gain
+                )
+                *
+                wiener_gain
             )
 
-            # Gentle overall suppression.
+            # -------------------------------------------------
+            # Gentle suppression
+            # -------------------------------------------------
+
             gain = (
                 1.0
                 -
                 self.reduction_strength
-                * (1.0 - gain)
+                *
+                (
+                    1.0 -
+                    gain
+                )
             )
 
-            # Strong spectral components should
-            # receive additional protection.
+            # -------------------------------------------------
+            # Strong speech components
+            # -------------------------------------------------
+
             relative_power = (
-                signal_power
-                /
+                signal_power /
                 (
-                    self.noise_power
-                    + 1e-10
+                    self.noise_power +
+                    1e-10
                 )
             )
 
@@ -313,27 +463,45 @@ class SpectralNoiseReducer:
                 0.85
             )
 
+            # -------------------------------------------------
+            # Limit gain
+            # -------------------------------------------------
+
             gain = np.clip(
                 gain,
                 self.minimum_gain,
                 1.0
             )
 
-            # Smooth gain over time.
+            # -------------------------------------------------
+            # Temporal smoothing
+            # -------------------------------------------------
+
             gain = (
                 self.smoothing
-                * self.previous_gain
+                *
+                self.previous_gain
                 +
-                (1.0 - self.smoothing)
-                * gain
+                (
+                    1.0 -
+                    self.smoothing
+                )
+                *
+                gain
             )
 
             self.previous_gain = gain
 
+            # -------------------------------------------------
+            # Apply enhancement
+            # -------------------------------------------------
+
             enhanced_spectrum = (
                 magnitude
-                * gain
-                * np.exp(
+                *
+                gain
+                *
+                np.exp(
                     1j * phase
                 )
             )
@@ -348,12 +516,20 @@ class SpectralNoiseReducer:
             )
 
             enhanced[
-                start:start + self.frame_size
+                start:
+                start + self.frame_size
             ] += enhanced_frame
 
             window_sum[
-                start:start + self.frame_size
-            ] += self.window ** 2
+                start:
+                start + self.frame_size
+            ] += (
+                self.window ** 2
+            )
+
+        # =====================================================
+        # OVERLAP ADD NORMALIZATION
+        # =====================================================
 
         valid = (
             window_sum > 1e-8
@@ -367,7 +543,10 @@ class SpectralNoiseReducer:
             :original_length
         ]
 
-        # Prevent clipping.
+        # =====================================================
+        # CLIPPING PROTECTION
+        # =====================================================
+
         peak = np.max(
             np.abs(enhanced)
         )
@@ -375,9 +554,9 @@ class SpectralNoiseReducer:
         if peak > 0.98:
 
             enhanced = (
-                enhanced
-                / peak
-                * 0.95
+                enhanced /
+                peak *
+                0.95
             )
 
         return enhanced.astype(

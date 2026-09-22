@@ -1,21 +1,32 @@
 import sounddevice as sd
 import soundfile as sf
 import numpy as np
-import os
 import time
+from pathlib import Path
 
-# ==============================
-# Phase 2 - Audio Test
-# ==============================
+# ============================================================
+# Phase 2 - Audio Recording Test
+# ============================================================
 
 SAMPLE_RATE = 48000
 CHANNELS = 1
 DURATION = 30
 
-OUTPUT_DIR = "output"
-ORIGINAL_FILE = os.path.join(OUTPUT_DIR, "test_original.wav")
+# ------------------------------------------------------------
+# Project paths
+# test_audio.py is inside:
+# src/Phase2/V4.1/
+#
+# parents[0] = V4.1
+# parents[1] = Phase2
+# ------------------------------------------------------------
 
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+INPUT_DIR = PROJECT_ROOT / "input"
+INPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+ORIGINAL_FILE = INPUT_DIR / "test_original_v41.wav"
 
 
 def record_audio():
@@ -52,12 +63,12 @@ def record_audio():
 
         print("\nRecording completed.")
 
-        # Remove any extra dimensions
+        # Convert to one-dimensional array
         audio = np.asarray(audio).reshape(-1)
 
-        # Save original recording
+        # Save directly to Phase2/input/
         sf.write(
-            ORIGINAL_FILE,
+            str(ORIGINAL_FILE),
             audio,
             SAMPLE_RATE,
             subtype="PCM_16"
@@ -94,6 +105,7 @@ def play_audio(audio):
 
 
 def main():
+
     audio = record_audio()
 
     if audio is None:
