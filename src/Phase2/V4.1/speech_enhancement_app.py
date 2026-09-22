@@ -4,6 +4,17 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 import importlib
+import threading
+import time
+from pathlib import Path
+
+import numpy as np
+import soundfile as sf
+
+
+# ============================================================
+# SOUNDDEVICE
+# ============================================================
 
 try:
     sd = importlib.import_module("sounddevice")
@@ -11,17 +22,19 @@ except ImportError as error:
     sd = None
     _sounddevice_import_error = error
 
-import soundfile as sf
-import numpy as np
 
-import threading
-import time
-
-from pathlib import Path
+# ============================================================
+# V4.1
+# ============================================================
 
 from spectral_noise_reduction_v41 import (
     SpectralNoiseReducer
 )
+
+
+# ============================================================
+# PLOTS
+# ============================================================
 
 from plot_comparison_v41 import (
     create_waveform_plot,
@@ -31,25 +44,14 @@ from plot_comparison_v41 import (
 
 
 # ============================================================
-# PROJECT
+# PROJECT PATHS
 # ============================================================
 
-PROJECT_ROOT = (
-    Path(__file__).resolve().parents[1]
-)
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-INPUT_DIR = (
-    PROJECT_ROOT / "input"
-)
-
-OUTPUT_DIR = (
-    PROJECT_ROOT / "output"
-)
-
-PLOTS_DIR = (
-    PROJECT_ROOT / "plots"
-)
-
+INPUT_DIR = PROJECT_ROOT / "input"
+OUTPUT_DIR = PROJECT_ROOT / "output"
+PLOTS_DIR = PROJECT_ROOT / "plots"
 
 INPUT_DIR.mkdir(
     parents=True,
@@ -72,12 +74,13 @@ PLOTS_DIR.mkdir(
 # ============================================================
 
 SAMPLE_RATE = 48000
-
 TEST_DURATION = 30
-
 BLOCK_SIZE = 2048
-
 CHANNELS = 1
+
+# This is the output level boost that was tested
+# successfully with the standalone V4.1 processor.
+OUTPUT_GAIN = 3.0
 
 
 # ============================================================
@@ -86,10 +89,7 @@ CHANNELS = 1
 
 class SpeechEnhancementApp:
 
-    def __init__(
-        self,
-        root
-    ):
+    def __init__(self, root):
 
         self.root = root
 
@@ -107,7 +107,7 @@ class SpeechEnhancementApp:
         )
 
         # ----------------------------------------------------
-        # Colors
+        # COLORS
         # ----------------------------------------------------
 
         self.bg = "#101318"
@@ -128,14 +128,14 @@ class SpeechEnhancementApp:
         )
 
         # ----------------------------------------------------
-        # Devices
+        # DEVICES
         # ----------------------------------------------------
 
         self.input_devices = []
         self.output_devices = []
 
         # ----------------------------------------------------
-        # Test data
+        # TEST DATA
         # ----------------------------------------------------
 
         self.test_original = None
@@ -147,17 +147,19 @@ class SpeechEnhancementApp:
         self.playing = False
 
         # ----------------------------------------------------
-        # Meeting data
+        # MEETING DATA
         # ----------------------------------------------------
 
         self.meeting_stream = None
+        self.meeting_thread = None
+
         self.meeting_running = False
         self.meeting_cancel = False
 
         self.live_reducer = None
 
         # ----------------------------------------------------
-        # Levels
+        # LEVELS
         # ----------------------------------------------------
 
         self.input_level = 0.0
@@ -165,13 +167,11 @@ class SpeechEnhancementApp:
         self.processing_ms = 0.0
 
         # ----------------------------------------------------
-        # Build
+        # BUILD
         # ----------------------------------------------------
 
         self.build_style()
-
         self.build_ui()
-
         self.refresh_devices()
 
         self.root.after(
@@ -193,9 +193,7 @@ class SpeechEnhancementApp:
         style = ttk.Style()
 
         try:
-            style.theme_use(
-                "clam"
-            )
+            style.theme_use("clam")
         except Exception:
             pass
 
@@ -209,10 +207,7 @@ class SpeechEnhancementApp:
             "TNotebook.Tab",
             background=self.card2,
             foreground=self.muted,
-            padding=(
-                25,
-                12
-            ),
+            padding=(25, 12),
             font=(
                 "DejaVu Sans",
                 11,
@@ -265,10 +260,7 @@ class SpeechEnhancementApp:
         header.pack(
             fill="x",
             padx=35,
-            pady=(
-                25,
-                5
-            )
+            pady=(25, 5)
         )
 
         tk.Label(
@@ -299,10 +291,7 @@ class SpeechEnhancementApp:
             bg=self.bg
         ).pack(
             anchor="w",
-            pady=(
-                4,
-                0
-            )
+            pady=(4, 0)
         )
 
         self.status_label = tk.Label(
@@ -322,7 +311,7 @@ class SpeechEnhancementApp:
         )
 
         # ----------------------------------------------------
-        # Notebook
+        # NOTEBOOK
         # ----------------------------------------------------
 
         self.notebook = ttk.Notebook(
@@ -357,17 +346,13 @@ class SpeechEnhancementApp:
         )
 
         self.build_test_mode()
-
         self.build_meeting_mode()
 
     # ========================================================
     # MICROPHONE CARD
     # ========================================================
 
-    def create_microphone_card(
-        self,
-        parent
-    ):
+    def create_microphone_card(self, parent):
 
         card = tk.Frame(
             parent,
@@ -395,10 +380,7 @@ class SpeechEnhancementApp:
         ).pack(
             anchor="w",
             padx=20,
-            pady=(
-                18,
-                5
-            )
+            pady=(18, 5)
         )
 
         tk.Label(
@@ -430,10 +412,7 @@ class SpeechEnhancementApp:
         combo.pack(
             fill="x",
             padx=20,
-            pady=(
-                10,
-                18
-            )
+            pady=(10, 18)
         )
 
         return combo
@@ -480,10 +459,7 @@ class SpeechEnhancementApp:
         ).pack(
             anchor="w",
             padx=20,
-            pady=(
-                15,
-                5
-            )
+            pady=(15, 5)
         )
 
         tk.Label(
@@ -515,10 +491,7 @@ class SpeechEnhancementApp:
         self.test_output_combo.pack(
             fill="x",
             padx=20,
-            pady=(
-                10,
-                15
-            )
+            pady=(10, 15)
         )
 
         # ----------------------------------------------------
@@ -538,10 +511,7 @@ class SpeechEnhancementApp:
         )
 
         self.test_timer_label.pack(
-            pady=(
-                15,
-                5
-            )
+            pady=(15, 5)
         )
 
         # ----------------------------------------------------
@@ -751,10 +721,7 @@ class SpeechEnhancementApp:
         ).pack(
             anchor="w",
             padx=20,
-            pady=(
-                18,
-                12
-            )
+            pady=(18, 12)
         )
 
         tk.Label(
@@ -781,10 +748,7 @@ class SpeechEnhancementApp:
         self.input_meter.pack(
             fill="x",
             padx=20,
-            pady=(
-                5,
-                15
-            )
+            pady=(5, 15)
         )
 
         tk.Label(
@@ -811,14 +775,11 @@ class SpeechEnhancementApp:
         self.output_meter.pack(
             fill="x",
             padx=20,
-            pady=(
-                5,
-                18
-            )
+            pady=(5, 18)
         )
 
         # ----------------------------------------------------
-        # Controls
+        # CONTROLS
         # ----------------------------------------------------
 
         controls = tk.Frame(
@@ -880,7 +841,7 @@ class SpeechEnhancementApp:
         )
 
         # ----------------------------------------------------
-        # Info
+        # INFO
         # ----------------------------------------------------
 
         info = tk.Frame(
@@ -924,6 +885,9 @@ class SpeechEnhancementApp:
 
     def refresh_devices(self):
 
+        if sd is None:
+            return
+
         try:
 
             devices = sd.query_devices()
@@ -931,15 +895,9 @@ class SpeechEnhancementApp:
             self.input_devices = []
             self.output_devices = []
 
-            for index, device in enumerate(
-                devices
-            ):
+            for index, device in enumerate(devices):
 
-                if (
-                    device[
-                        "max_input_channels"
-                    ] > 0
-                ):
+                if device["max_input_channels"] > 0:
 
                     self.input_devices.append(
                         (
@@ -948,11 +906,7 @@ class SpeechEnhancementApp:
                         )
                     )
 
-                if (
-                    device[
-                        "max_output_channels"
-                    ] > 0
-                ):
+                if device["max_output_channels"] > 0:
 
                     self.output_devices.append(
                         (
@@ -973,17 +927,17 @@ class SpeechEnhancementApp:
                 in self.output_devices
             ]
 
-            self.test_mic_combo[
-                "values"
-            ] = input_names
+            self.test_mic_combo["values"] = (
+                input_names
+            )
 
-            self.meeting_mic_combo[
-                "values"
-            ] = input_names
+            self.meeting_mic_combo["values"] = (
+                input_names
+            )
 
-            self.test_output_combo[
-                "values"
-            ] = output_names
+            self.test_output_combo["values"] = (
+                output_names
+            )
 
             default_input, default_output = (
                 sd.default.device
@@ -994,9 +948,7 @@ class SpeechEnhancementApp:
             for position, (
                 index,
                 _
-            ) in enumerate(
-                self.input_devices
-            ):
+            ) in enumerate(self.input_devices):
 
                 if index == default_input:
 
@@ -1008,9 +960,7 @@ class SpeechEnhancementApp:
             for position, (
                 index,
                 _
-            ) in enumerate(
-                self.output_devices
-            ):
+            ) in enumerate(self.output_devices):
 
                 if index == default_output:
 
@@ -1044,10 +994,7 @@ class SpeechEnhancementApp:
     # GET INPUT
     # ========================================================
 
-    def get_selected_input(
-        self,
-        combo
-    ):
+    def get_selected_input(self, combo):
 
         position = combo.current()
 
@@ -1057,9 +1004,7 @@ class SpeechEnhancementApp:
                 "Please select an App Microphone."
             )
 
-        return self.input_devices[
-            position
-        ][0]
+        return self.input_devices[position][0]
 
     # ========================================================
     # GET OUTPUT
@@ -1077,9 +1022,7 @@ class SpeechEnhancementApp:
                 "Please select a speaker/headphone."
             )
 
-        return self.output_devices[
-            position
-        ][0]
+        return self.output_devices[position][0]
 
     # ========================================================
     # START TEST
@@ -1088,7 +1031,6 @@ class SpeechEnhancementApp:
     def start_test(self):
 
         if self.test_recording:
-
             return
 
         try:
@@ -1133,17 +1075,12 @@ class SpeechEnhancementApp:
         )
 
         self.test_timer_label.config(
-            text=(
-                "Recording: "
-                "30 seconds remaining"
-            )
+            text="Recording: 30 seconds remaining"
         )
 
         thread = threading.Thread(
             target=self.record_test_worker,
-            args=(
-                input_device,
-            ),
+            args=(input_device,),
             daemon=True
         )
 
@@ -1153,20 +1090,15 @@ class SpeechEnhancementApp:
     # RECORD TEST
     # ========================================================
 
-    def record_test_worker(
-        self,
-        input_device
-    ):
+    def record_test_worker(self, input_device):
 
         try:
 
             total_frames = int(
-                TEST_DURATION *
-                SAMPLE_RATE
+                TEST_DURATION * SAMPLE_RATE
             )
 
             chunks = []
-
             frames_recorded = 0
 
             def callback(
@@ -1179,7 +1111,6 @@ class SpeechEnhancementApp:
                 nonlocal frames_recorded
 
                 if self.test_cancel:
-
                     raise sd.CallbackStop()
 
                 remaining = (
@@ -1195,48 +1126,38 @@ class SpeechEnhancementApp:
                 if take > 0:
 
                     chunks.append(
-                        indata[
-                            :take,
-                            0
-                        ].copy()
+                        indata[:take, 0].copy()
                     )
 
                     frames_recorded += take
 
-                if (
-                    frames_recorded >=
-                    total_frames
-                ):
+                if frames_recorded >= total_frames:
 
                     raise sd.CallbackStop()
 
             stream = sd.InputStream(
                 samplerate=SAMPLE_RATE,
                 blocksize=BLOCK_SIZE,
-                channels=1,
+                channels=CHANNELS,
                 dtype="float32",
                 device=input_device,
                 callback=callback,
                 latency="low"
             )
 
-            start_time = (
-                time.perf_counter()
-            )
+            start_time = time.perf_counter()
 
             with stream:
 
                 while (
-                    frames_recorded <
-                    total_frames
+                    frames_recorded < total_frames
                     and
                     not self.test_cancel
                 ):
 
                     elapsed = (
                         time.perf_counter()
-                        -
-                        start_time
+                        - start_time
                     )
 
                     remaining = max(
@@ -1248,14 +1169,10 @@ class SpeechEnhancementApp:
                     self.root.after(
                         0,
                         lambda r=remaining:
-                        self.update_record_timer(
-                            r
-                        )
+                        self.update_record_timer(r)
                     )
 
-                    time.sleep(
-                        0.05
-                    )
+                    time.sleep(0.05)
 
             if self.test_cancel:
 
@@ -1272,13 +1189,9 @@ class SpeechEnhancementApp:
                     "No audio was captured."
                 )
 
-            audio = np.concatenate(
-                chunks
-            )
+            audio = np.concatenate(chunks)
 
-            audio = audio[
-                :total_frames
-            ]
+            audio = audio[:total_frames]
 
             if len(audio) < total_frames:
 
@@ -1286,14 +1199,9 @@ class SpeechEnhancementApp:
                     audio,
                     (
                         0,
-                        total_frames -
-                        len(audio)
+                        total_frames - len(audio)
                     )
                 )
-
-            # ------------------------------------------------
-            # Processing message
-            # ------------------------------------------------
 
             self.root.after(
                 0,
@@ -1307,7 +1215,7 @@ class SpeechEnhancementApp:
             )
 
             # ------------------------------------------------
-            # INPUT AUDIO
+            # SAVE ORIGINAL
             # ------------------------------------------------
 
             original_path = (
@@ -1323,7 +1231,7 @@ class SpeechEnhancementApp:
             )
 
             # ------------------------------------------------
-            # V4.1
+            # V4.1 PROCESSOR
             # ------------------------------------------------
 
             reducer = SpectralNoiseReducer(
@@ -1337,18 +1245,13 @@ class SpeechEnhancementApp:
                 smoothing=0.85
             )
 
-            start_processing = (
-                time.perf_counter()
-            )
+            start_processing = time.perf_counter()
 
-            enhanced = reducer.process(
-                audio
-            )
+            enhanced = reducer.process(audio)
 
             processing_time = (
                 time.perf_counter()
-                -
-                start_processing
+                - start_processing
             )
 
             enhanced = np.asarray(
@@ -1357,7 +1260,7 @@ class SpeechEnhancementApp:
             ).reshape(-1)
 
             # ------------------------------------------------
-            # Match length
+            # MATCH LENGTH
             # ------------------------------------------------
 
             if len(enhanced) < len(audio):
@@ -1366,25 +1269,32 @@ class SpeechEnhancementApp:
                     enhanced,
                     (
                         0,
-                        len(audio) -
-                        len(enhanced)
+                        len(audio) - len(enhanced)
                     )
                 )
 
             elif len(enhanced) > len(audio):
 
-                enhanced = enhanced[
-                    :len(audio)
-                ]
+                enhanced = enhanced[:len(audio)]
+
+            # ------------------------------------------------
+            # OUTPUT GAIN
+            # ------------------------------------------------
+
+            enhanced = enhanced * OUTPUT_GAIN
+
+            # ------------------------------------------------
+            # CLIPPING PROTECTION
+            # ------------------------------------------------
 
             enhanced = np.clip(
                 enhanced,
-                -0.98,
-                0.98
+                -1.0,
+                1.0
             )
 
             # ------------------------------------------------
-            # OUTPUT AUDIO
+            # SAVE ENHANCED
             # ------------------------------------------------
 
             enhanced_path = (
@@ -1407,16 +1317,14 @@ class SpeechEnhancementApp:
             self.test_enhanced = enhanced
 
             # ------------------------------------------------
-            # Generate plots
+            # GENERATE PLOTS
             # ------------------------------------------------
 
             self.root.after(
                 0,
                 lambda:
                 self.test_timer_label.config(
-                    text=(
-                        "Generating comparison plots..."
-                    )
+                    text="Generating comparison plots..."
                 )
             )
 
@@ -1438,22 +1346,18 @@ class SpeechEnhancementApp:
             )
 
             # ------------------------------------------------
-            # Metrics
+            # METRICS
             # ------------------------------------------------
 
             original_rms = float(
                 np.sqrt(
-                    np.mean(
-                        audio ** 2
-                    )
+                    np.mean(audio ** 2)
                 )
             )
 
             enhanced_rms = float(
                 np.sqrt(
-                    np.mean(
-                        enhanced ** 2
-                    )
+                    np.mean(enhanced ** 2)
                 )
             )
 
@@ -1498,22 +1402,16 @@ class SpeechEnhancementApp:
             self.root.after(
                 0,
                 lambda:
-                self.test_failed(
-                    str(error)
-                )
+                self.test_failed(str(error))
             )
 
     # ========================================================
     # TIMER
     # ========================================================
 
-    def update_record_timer(
-        self,
-        remaining
-    ):
+    def update_record_timer(self, remaining):
 
         if not self.test_recording:
-
             return
 
         if remaining > 0:
@@ -1539,7 +1437,6 @@ class SpeechEnhancementApp:
     def cancel_test(self):
 
         if not self.test_recording:
-
             return
 
         self.test_cancel = True
@@ -1638,6 +1535,9 @@ class SpeechEnhancementApp:
                 f"RMS Change     : "
                 f"{rms_change:+.2f} dB\n"
 
+                f"Output Gain    : "
+                f"{OUTPUT_GAIN:.1f}x\n"
+
                 f"Processing Time: "
                 f"{processing_time:.3f} sec\n\n"
 
@@ -1658,10 +1558,7 @@ class SpeechEnhancementApp:
     # TEST FAILED
     # ========================================================
 
-    def test_failed(
-        self,
-        error
-    ):
+    def test_failed(self, error):
 
         self.test_recording = False
 
@@ -1852,11 +1749,8 @@ class SpeechEnhancementApp:
     def stop_audio(self):
 
         try:
-
             sd.stop()
-
         except Exception:
-
             pass
 
         self.playing = False
@@ -1873,7 +1767,6 @@ class SpeechEnhancementApp:
     def start_meeting(self):
 
         if self.meeting_running:
-
             return
 
         try:
@@ -1920,9 +1813,7 @@ class SpeechEnhancementApp:
 
         self.meeting_thread = threading.Thread(
             target=self.meeting_worker,
-            args=(
-                input_device,
-            ),
+            args=(input_device,),
             daemon=True
         )
 
@@ -1932,24 +1823,19 @@ class SpeechEnhancementApp:
     # MEETING WORKER
     # ========================================================
 
-    def meeting_worker(
-        self,
-        input_device
-    ):
+    def meeting_worker(self, input_device):
 
         try:
 
-            self.live_reducer = (
-                SpectralNoiseReducer(
-                    sample_rate=SAMPLE_RATE,
-                    frame_size=BLOCK_SIZE,
-                    hop_size=512,
-                    noise_search_duration=10.0,
-                    noise_update_rate=0.03,
-                    reduction_strength=0.55,
-                    minimum_gain=0.55,
-                    smoothing=0.85
-                )
+            self.live_reducer = SpectralNoiseReducer(
+                sample_rate=SAMPLE_RATE,
+                frame_size=BLOCK_SIZE,
+                hop_size=512,
+                noise_search_duration=10.0,
+                noise_update_rate=0.03,
+                reduction_strength=0.55,
+                minimum_gain=0.55,
+                smoothing=0.85
             )
 
             self.start_meeting_stream(
@@ -1961,23 +1847,16 @@ class SpeechEnhancementApp:
             self.root.after(
                 0,
                 lambda:
-                self.meeting_failed(
-                    str(error)
-                )
+                self.meeting_failed(str(error))
             )
 
     # ========================================================
     # LIVE STREAM
     # ========================================================
 
-    def start_meeting_stream(
-        self,
-        input_device
-    ):
+    def start_meeting_stream(self, input_device):
 
-        default_input, default_output = (
-            sd.default.device
-        )
+        _, default_output = sd.default.device
 
         def callback(
             indata,
@@ -1987,16 +1866,9 @@ class SpeechEnhancementApp:
             status
         ):
 
-            start_time = (
-                time.perf_counter()
-            )
+            start_time = time.perf_counter()
 
-            incoming = (
-                indata[
-                    :,
-                    0
-                ].copy()
-            )
+            incoming = indata[:, 0].copy()
 
             self.input_level = float(
                 np.sqrt(
@@ -2025,27 +1897,30 @@ class SpeechEnhancementApp:
                         enhanced,
                         (
                             0,
-                            frames -
-                            len(enhanced)
+                            frames - len(enhanced)
                         )
                     )
 
                 elif len(enhanced) > frames:
 
-                    enhanced = enhanced[
-                        :frames
-                    ]
+                    enhanced = enhanced[:frames]
+
+                # ------------------------------------------------
+                # LIVE OUTPUT GAIN
+                # ------------------------------------------------
+
+                enhanced = (
+                    enhanced *
+                    OUTPUT_GAIN
+                )
 
                 enhanced = np.clip(
                     enhanced,
-                    -0.98,
-                    0.98
+                    -1.0,
+                    1.0
                 )
 
-                outdata[
-                    :,
-                    0
-                ] = enhanced
+                outdata[:, 0] = enhanced
 
                 self.output_level = float(
                     np.sqrt(
@@ -2057,10 +1932,7 @@ class SpeechEnhancementApp:
 
             except Exception:
 
-                outdata[
-                    :,
-                    0
-                ] = incoming
+                outdata[:, 0] = incoming
 
                 self.output_level = (
                     self.input_level
@@ -2068,8 +1940,7 @@ class SpeechEnhancementApp:
 
             self.processing_ms = (
                 time.perf_counter()
-                -
-                start_time
+                - start_time
             ) * 1000.0
 
         self.meeting_stream = sd.Stream(
@@ -2130,17 +2001,13 @@ class SpeechEnhancementApp:
                 self.meeting_stream.close()
 
         except Exception:
-
             pass
 
         self.meeting_stream = None
 
         try:
-
             sd.stop()
-
         except Exception:
-
             pass
 
         self.input_level = 0.0
@@ -2173,10 +2040,7 @@ class SpeechEnhancementApp:
     # MEETING FAILED
     # ========================================================
 
-    def meeting_failed(
-        self,
-        error
-    ):
+    def meeting_failed(self, error):
 
         self.meeting_running = False
 
@@ -2188,7 +2052,6 @@ class SpeechEnhancementApp:
                 self.meeting_stream.close()
 
         except Exception:
-
             pass
 
         self.meeting_stream = None
@@ -2227,13 +2090,13 @@ class SpeechEnhancementApp:
             self.output_level * 8.0
         )
 
-        self.input_meter[
-            "value"
-        ] = input_value
+        self.input_meter["value"] = (
+            input_value
+        )
 
-        self.output_meter[
-            "value"
-        ] = output_value
+        self.output_meter["value"] = (
+            output_value
+        )
 
         if self.meeting_running:
 
@@ -2282,11 +2145,8 @@ class SpeechEnhancementApp:
         self.meeting_running = False
 
         try:
-
             sd.stop()
-
         except Exception:
-
             pass
 
         try:
@@ -2297,7 +2157,6 @@ class SpeechEnhancementApp:
                 self.meeting_stream.close()
 
         except Exception:
-
             pass
 
         self.root.destroy()
@@ -2310,14 +2169,18 @@ class SpeechEnhancementApp:
 def main():
 
     if sd is None:
+
         root = tk.Tk()
         root.withdraw()
+
         messagebox.showerror(
             "Missing Dependency",
-            "The sounddevice package is required. Install it with:\n\n"
+            "The sounddevice package is required.\n\n"
+            "Install it with:\n"
             "python -m pip install sounddevice\n\n"
             f"Details: {_sounddevice_import_error}"
         )
+
         root.destroy()
         return
 
@@ -2331,5 +2194,4 @@ def main():
 
 
 if __name__ == "__main__":
-
     main()

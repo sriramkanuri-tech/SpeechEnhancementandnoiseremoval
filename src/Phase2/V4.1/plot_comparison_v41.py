@@ -1,12 +1,15 @@
-from pathlib import Path
-
-import numpy as np
-import soundfile as sf
+#!/usr/bin/env python3
 
 import matplotlib
+
+# Important for Linux/headless/background plot generation.
+# Prevents GUI backend problems.
 matplotlib.use("Agg")
 
+import numpy as np
 import matplotlib.pyplot as plt
+
+from pathlib import Path
 
 
 # ============================================================
@@ -15,399 +18,525 @@ import matplotlib.pyplot as plt
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-INPUT_DIR = PROJECT_ROOT / "input"
-OUTPUT_DIR = PROJECT_ROOT / "output"
 PLOTS_DIR = PROJECT_ROOT / "plots"
 
-INPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-PLOTS_DIR.mkdir(parents=True, exist_ok=True)
-
-INPUT_FILE = INPUT_DIR / "test_original_v41.wav"
-OUTPUT_FILE = OUTPUT_DIR / "test_enhanced_v41.wav"
-
-
-# ============================================================
-# HEADER
-# ============================================================
-
-print("=" * 60)
-print("GENERATING AUDIO COMPARISON PLOTS")
-print("=" * 60)
-
-
-# ============================================================
-# CHECK FILES
-# ============================================================
-
-if not INPUT_FILE.is_file():
-    print("\nERROR: Original audio was not found.")
-    print(INPUT_FILE)
-    raise SystemExit(1)
-
-if not OUTPUT_FILE.is_file():
-    print("\nERROR: Enhanced audio was not found.")
-    print(OUTPUT_FILE)
-    raise SystemExit(1)
-
-
-# ============================================================
-# LOAD ORIGINAL AUDIO
-# ============================================================
-
-original, original_sr = sf.read(
-    str(INPUT_FILE)
+PLOTS_DIR.mkdir(
+    parents=True,
+    exist_ok=True
 )
 
-if original.ndim > 1:
-    original = original.mean(axis=1)
-
-original = original.astype(np.float32)
-
 
 # ============================================================
-# LOAD ENHANCED AUDIO
+# HELPER
 # ============================================================
 
-enhanced, enhanced_sr = sf.read(
-    str(OUTPUT_FILE)
-)
+def _prepare_audio(audio):
+    """
+    Convert audio to a clean mono float32 NumPy array.
+    """
 
-if enhanced.ndim > 1:
-    enhanced = enhanced.mean(axis=1)
-
-enhanced = enhanced.astype(np.float32)
-
-
-# ============================================================
-# AUDIO METRICS
-# ============================================================
-
-original_rms = np.sqrt(
-    np.mean(original ** 2)
-)
-
-enhanced_rms = np.sqrt(
-    np.mean(enhanced ** 2)
-)
-
-original_peak = np.max(
-    np.abs(original)
-)
-
-enhanced_peak = np.max(
-    np.abs(enhanced)
-)
-
-rms_change = (
-    20
-    * np.log10(
-        enhanced_rms /
-        max(original_rms, 1e-10)
+    audio = np.asarray(
+        audio,
+        dtype=np.float32
     )
-)
+
+    if audio.ndim > 1:
+        audio = np.mean(
+            audio,
+            axis=1
+        )
+
+    return audio.reshape(-1)
 
 
 # ============================================================
-# 1. WAVEFORM
+# WAVEFORM PLOT
 # ============================================================
 
-print("\nCreating waveform plot...")
-
-original_time = (
-    np.arange(len(original)) /
-    original_sr
-)
-
-enhanced_time = (
-    np.arange(len(enhanced)) /
-    enhanced_sr
-)
-
-fig, axes = plt.subplots(
-    2,
-    1,
-    figsize=(14, 8)
-)
-
-axes[0].plot(
-    original_time,
+def create_waveform_plot(
     original,
-    linewidth=0.6
-)
-
-axes[0].set_title(
-    "Original Speech Waveform"
-)
-
-axes[0].set_xlabel(
-    "Time (seconds)"
-)
-
-axes[0].set_ylabel(
-    "Amplitude"
-)
-
-axes[0].grid(
-    True,
-    alpha=0.3
-)
-
-
-axes[1].plot(
-    enhanced_time,
     enhanced,
-    linewidth=0.6
-)
+    sample_rate
+):
+    """
+    Create original vs enhanced waveform comparison.
 
-axes[1].set_title(
-    "V4.1 Enhanced Speech Waveform"
-)
+    Output:
+        Phase2/plots/waveform_comparison.png
+    """
 
-axes[1].set_xlabel(
-    "Time (seconds)"
-)
+    original = _prepare_audio(
+        original
+    )
 
-axes[1].set_ylabel(
-    "Amplitude"
-)
+    enhanced = _prepare_audio(
+        enhanced
+    )
 
-axes[1].grid(
-    True,
-    alpha=0.3
-)
+    original_time = (
+        np.arange(len(original))
+        / sample_rate
+    )
 
-fig.tight_layout()
+    enhanced_time = (
+        np.arange(len(enhanced))
+        / sample_rate
+    )
 
-waveform_file = (
-    PLOTS_DIR /
-    "waveform_comparison.png"
-)
+    fig, axes = plt.subplots(
+        2,
+        1,
+        figsize=(14, 8),
+        sharex=False
+    )
 
-fig.savefig(
-    str(waveform_file),
-    dpi=150,
-    format="png"
-)
+    # --------------------------------------------------------
+    # ORIGINAL
+    # --------------------------------------------------------
 
-plt.close(fig)
+    axes[0].plot(
+        original_time,
+        original,
+        linewidth=0.7
+    )
 
-print(
-    f"Created: {waveform_file}"
-)
+    axes[0].set_title(
+        "Original Audio Waveform"
+    )
+
+    axes[0].set_ylabel(
+        "Amplitude"
+    )
+
+    axes[0].grid(
+        True,
+        alpha=0.3
+    )
+
+    # --------------------------------------------------------
+    # ENHANCED
+    # --------------------------------------------------------
+
+    axes[1].plot(
+        enhanced_time,
+        enhanced,
+        linewidth=0.7
+    )
+
+    axes[1].set_title(
+        "V4.1 Enhanced Audio Waveform"
+    )
+
+    axes[1].set_xlabel(
+        "Time (seconds)"
+    )
+
+    axes[1].set_ylabel(
+        "Amplitude"
+    )
+
+    axes[1].grid(
+        True,
+        alpha=0.3
+    )
+
+    fig.suptitle(
+        "Speech Enhancement and Noise Removal - Waveform Comparison",
+        fontsize=14,
+        fontweight="bold"
+    )
+
+    fig.tight_layout()
+
+    output_path = (
+        PLOTS_DIR /
+        "waveform_comparison.png"
+    )
+
+    fig.savefig(
+        str(output_path),
+        dpi=150,
+        bbox_inches="tight"
+    )
+
+    plt.close(fig)
+
+    print(
+        f"Created: {output_path}"
+    )
+
+    return output_path
 
 
 # ============================================================
-# 2. SPECTROGRAM
+# SPECTROGRAM PLOT
 # ============================================================
 
-print("\nCreating spectrogram plot...")
-
-fig, axes = plt.subplots(
-    2,
-    1,
-    figsize=(14, 9)
-)
-
-axes[0].specgram(
+def create_spectrogram_plot(
     original,
-    Fs=original_sr,
-    NFFT=2048,
-    noverlap=1536
-)
-
-axes[0].set_title(
-    "Original Speech Spectrogram"
-)
-
-axes[0].set_xlabel(
-    "Time (seconds)"
-)
-
-axes[0].set_ylabel(
-    "Frequency (Hz)"
-)
-
-
-axes[1].specgram(
     enhanced,
-    Fs=enhanced_sr,
-    NFFT=2048,
-    noverlap=1536
-)
+    sample_rate
+):
+    """
+    Create original vs enhanced spectrogram comparison.
 
-axes[1].set_title(
-    "V4.1 Enhanced Speech Spectrogram"
-)
+    Output:
+        Phase2/plots/spectrogram_comparison.png
+    """
 
-axes[1].set_xlabel(
-    "Time (seconds)"
-)
+    original = _prepare_audio(
+        original
+    )
 
-axes[1].set_ylabel(
-    "Frequency (Hz)"
-)
+    enhanced = _prepare_audio(
+        enhanced
+    )
 
-fig.tight_layout()
+    fig, axes = plt.subplots(
+        2,
+        1,
+        figsize=(14, 9)
+    )
 
-spectrogram_file = (
-    PLOTS_DIR /
-    "spectrogram_comparison.png"
-)
+    # --------------------------------------------------------
+    # ORIGINAL SPECTROGRAM
+    # --------------------------------------------------------
 
-fig.savefig(
-    str(spectrogram_file),
-    dpi=120,
-    format="png"
-)
+    axes[0].specgram(
+        original,
+        Fs=sample_rate,
+        NFFT=2048,
+        noverlap=1536
+    )
 
-plt.close(fig)
+    axes[0].set_title(
+        "Original Audio Spectrogram"
+    )
 
-print(
-    f"Created: {spectrogram_file}"
-)
+    axes[0].set_ylabel(
+        "Frequency (Hz)"
+    )
 
+    axes[0].set_ylim(
+        0,
+        min(
+            sample_rate / 2,
+            12000
+        )
+    )
 
-# ============================================================
-# 3. AUDIO METRICS
-# ============================================================
+    # --------------------------------------------------------
+    # ENHANCED SPECTROGRAM
+    # --------------------------------------------------------
 
-print("\nCreating audio metrics plot...")
+    axes[1].specgram(
+        enhanced,
+        Fs=sample_rate,
+        NFFT=2048,
+        noverlap=1536
+    )
 
-labels = [
-    "Original\nRMS",
-    "Enhanced\nRMS",
-    "Original\nPeak",
-    "Enhanced\nPeak"
-]
+    axes[1].set_title(
+        "V4.1 Enhanced Audio Spectrogram"
+    )
 
-values = [
-    original_rms,
-    enhanced_rms,
-    original_peak,
-    enhanced_peak
-]
+    axes[1].set_xlabel(
+        "Time (seconds)"
+    )
 
-fig, ax = plt.subplots(
-    figsize=(10, 6)
-)
+    axes[1].set_ylabel(
+        "Frequency (Hz)"
+    )
 
-ax.bar(
-    labels,
-    values
-)
+    axes[1].set_ylim(
+        0,
+        min(
+            sample_rate / 2,
+            12000
+        )
+    )
 
-ax.set_title(
-    "Original vs V4.1 Enhanced Audio"
-)
+    fig.suptitle(
+        "Speech Enhancement and Noise Removal - Spectrogram Comparison",
+        fontsize=14,
+        fontweight="bold"
+    )
 
-ax.set_ylabel(
-    "Amplitude"
-)
+    fig.tight_layout()
 
-ax.grid(
-    axis="y",
-    alpha=0.3
-)
+    output_path = (
+        PLOTS_DIR /
+        "spectrogram_comparison.png"
+    )
 
-fig.tight_layout()
+    fig.savefig(
+        str(output_path),
+        dpi=150,
+        bbox_inches="tight"
+    )
 
+    plt.close(fig)
 
-# ------------------------------------------------------------
-# IMPORTANT:
-# Use a temporary filename for the third plot.
-# ------------------------------------------------------------
+    print(
+        f"Created: {output_path}"
+    )
 
-temp_metrics_file = (
-    PLOTS_DIR /
-    "audio_metrics_temp.png"
-)
-
-final_metrics_file = (
-    PLOTS_DIR /
-    "audio_metrics.png"
-)
-
-# Remove old temporary file if it exists
-if temp_metrics_file.exists():
-    temp_metrics_file.unlink()
-
-# Remove old final file if it exists
-if final_metrics_file.exists():
-    final_metrics_file.unlink()
-
-
-fig.savefig(
-    str(temp_metrics_file),
-    dpi=150,
-    format="png"
-)
-
-plt.close(fig)
-
-print(
-    f"Created: {temp_metrics_file}"
-)
+    return output_path
 
 
 # ============================================================
-# RENAME TEMPORARY FILE
+# AUDIO METRICS PLOT
 # ============================================================
 
-temp_metrics_file.rename(
-    final_metrics_file
-)
+def create_metrics_plot(
+    original,
+    enhanced
+):
+    """
+    Create RMS and peak comparison plot.
 
-print(
-    f"Created: {final_metrics_file}"
-)
+    Output:
+        Phase2/plots/audio_metrics.png
+    """
+
+    original = _prepare_audio(
+        original
+    )
+
+    enhanced = _prepare_audio(
+        enhanced
+    )
+
+    # --------------------------------------------------------
+    # RMS
+    # --------------------------------------------------------
+
+    original_rms = float(
+        np.sqrt(
+            np.mean(
+                original ** 2
+            )
+        )
+    )
+
+    enhanced_rms = float(
+        np.sqrt(
+            np.mean(
+                enhanced ** 2
+            )
+        )
+    )
+
+    # --------------------------------------------------------
+    # PEAK
+    # --------------------------------------------------------
+
+    original_peak = float(
+        np.max(
+            np.abs(original)
+        )
+    )
+
+    enhanced_peak = float(
+        np.max(
+            np.abs(enhanced)
+        )
+    )
+
+    # --------------------------------------------------------
+    # RMS CHANGE
+    # --------------------------------------------------------
+
+    rms_change_db = (
+        20 *
+        np.log10(
+            enhanced_rms /
+            max(
+                original_rms,
+                1e-10
+            )
+        )
+    )
+
+    # --------------------------------------------------------
+    # PLOT
+    # --------------------------------------------------------
+
+    labels = [
+        "Original",
+        "Enhanced"
+    ]
+
+    rms_values = [
+        original_rms,
+        enhanced_rms
+    ]
+
+    peak_values = [
+        original_peak,
+        enhanced_peak
+    ]
+
+    fig, axes = plt.subplots(
+        1,
+        2,
+        figsize=(12, 5)
+    )
+
+    # --------------------------------------------------------
+    # RMS
+    # --------------------------------------------------------
+
+    axes[0].bar(
+        labels,
+        rms_values
+    )
+
+    axes[0].set_title(
+        "RMS Level"
+    )
+
+    axes[0].set_ylabel(
+        "RMS"
+    )
+
+    axes[0].grid(
+        axis="y",
+        alpha=0.3
+    )
+
+    # --------------------------------------------------------
+    # PEAK
+    # --------------------------------------------------------
+
+    axes[1].bar(
+        labels,
+        peak_values
+    )
+
+    axes[1].set_title(
+        "Peak Amplitude"
+    )
+
+    axes[1].set_ylabel(
+        "Peak"
+    )
+
+    axes[1].grid(
+        axis="y",
+        alpha=0.3
+    )
+
+    fig.suptitle(
+        "V4.1 Audio Metrics Comparison",
+        fontsize=14,
+        fontweight="bold"
+    )
+
+    fig.text(
+        0.5,
+        0.01,
+        f"RMS Change: {rms_change_db:+.2f} dB",
+        ha="center",
+        fontsize=11
+    )
+
+    fig.tight_layout(
+        rect=(
+            0,
+            0.04,
+            1,
+            1
+        )
+    )
+
+    # --------------------------------------------------------
+    # SAVE TEMPORARILY
+    # --------------------------------------------------------
+
+    temp_path = (
+        PLOTS_DIR /
+        "audio_metrics_temp.png"
+    )
+
+    final_path = (
+        PLOTS_DIR /
+        "audio_metrics.png"
+    )
+
+    fig.savefig(
+        str(temp_path),
+        dpi=150,
+        bbox_inches="tight"
+    )
+
+    plt.close(fig)
+
+    # --------------------------------------------------------
+    # REPLACE OLD FILE
+    # --------------------------------------------------------
+
+    try:
+
+        if final_path.exists():
+            final_path.unlink()
+
+        temp_path.replace(
+            final_path
+        )
+
+    except Exception:
+
+        # Fallback if replacement is not possible.
+        final_path = temp_path
+
+    print(
+        f"Created: {final_path}"
+    )
+
+    return final_path
 
 
 # ============================================================
-# FINAL RESULTS
+# STANDALONE TEST
 # ============================================================
 
-print("\n" + "=" * 60)
-print("PLOT GENERATION COMPLETE")
-print("=" * 60)
+if __name__ == "__main__":
 
-print(
-    f"\nOriginal RMS    : "
-    f"{original_rms:.6f}"
-)
+    print("=" * 60)
+    print(
+        "V4.1 PLOT MODULE TEST"
+    )
+    print("=" * 60)
 
-print(
-    f"Enhanced RMS    : "
-    f"{enhanced_rms:.6f}"
-)
+    print(
+        f"\nProject root:\n{PROJECT_ROOT}"
+    )
 
-print(
-    f"Original Peak   : "
-    f"{original_peak:.6f}"
-)
+    print(
+        f"\nPlots directory:\n{PLOTS_DIR}"
+    )
 
-print(
-    f"Enhanced Peak   : "
-    f"{enhanced_peak:.6f}"
-)
+    print(
+        "\nAvailable functions:"
+    )
 
-print(
-    f"RMS Change      : "
-    f"{rms_change:+.2f} dB"
-)
+    print(
+        "  create_waveform_plot()"
+    )
 
-print("\nPlots created successfully:")
+    print(
+        "  create_spectrogram_plot()"
+    )
 
-print(
-    f"1. {waveform_file}"
-)
+    print(
+        "  create_metrics_plot()"
+    )
 
-print(
-    f"2. {spectrogram_file}"
-)
+    print(
+        "\nPlot module loaded successfully."
+    )
 
-print(
-    f"3. {final_metrics_file}"
-)
-
-print("\n" + "=" * 60)
+    print(
+        "=" * 60
+    )
